@@ -16,6 +16,7 @@ module Lib
     ) where
 
 import Control.Applicative
+import Control.Monad.Fix
 import Control.Monad.Free
 
 import Data.Char (toUpper)
@@ -46,6 +47,13 @@ eqDOM = undefined
 
 data DOMF next
   = forall a. Hashable a => View (DOM (Δ a)) (Δ a -> next)
+  | forall a b. Recur (VDOM a -> VDOM a) (a -> next)
+
+deriving instance Functor DOMF
+
+newtype VDOM a = VDOM (Free DOMF a)
+  deriving stock Functor
+  deriving newtype (Applicative, Monad)
 
 instance Hashable a => Hashable (VDOM a) where
   hashWithSalt salt (VDOM (Pure a)) = hashWithSalt salt a
@@ -55,11 +63,8 @@ instance Eq a => Eq (VDOM a) where
   (VDOM (Pure a)) == (VDOM (Pure b)) = a == b
   (VDOM (Free (View a _))) == (VDOM (Free (View b _))) = a `eqDOM` b
 
-deriving instance Functor DOMF
-
-newtype VDOM a = VDOM (Free DOMF a)
-  deriving stock Functor
-  deriving newtype (Applicative, Monad)
+recur :: (VDOM a -> VDOM a) -> VDOM a
+recur f = VDOM $ liftF $ Recur f id
 
 view :: Hashable a => DOM (Δ a) -> VDOM (Δ a)
 view v = VDOM $ liftF $ View v id
@@ -156,7 +161,7 @@ toString = undefined
 
 data Action = Inc | Dec deriving (Show, G.Generic, Hashable, Enum)
 
-counter v = do
+counter v = recur $ \next -> do
   r <- div []
     [ div [ onClick (from Inc) ] [ text (from "-") ]
     , div [] [ text (toString v) ]
@@ -166,7 +171,7 @@ counter v = do
   enum r $ \r -> case r of
     Dec -> do
       modify v dec
-      counter v
+      next
     Inc -> do
       modify v inc
-      counter v
+      next

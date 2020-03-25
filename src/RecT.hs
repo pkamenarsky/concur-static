@@ -73,6 +73,8 @@ test :: Int -> RecT Int (Δ Int)
 test x = do
   step 4
   step 5
+  step 4
+  step 5
   step 6
   test2 7
   step 7

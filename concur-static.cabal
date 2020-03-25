@@ -1,0 +1,75 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.31.2.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: a6c523ba09dd96617f5285aa90f8dece25671bedf6505ba11a939616dc205e23
+
+name:           concur-static
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/concur-static#readme>
+homepage:       https://github.com/githubuser/concur-static#readme
+bug-reports:    https://github.com/githubuser/concur-static/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2020 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/concur-static
+
+library
+  exposed-modules:
+      Lib
+      RecT
+  other-modules:
+      Paths_concur_static
+  hs-source-dirs:
+      src
+  build-depends:
+      base >=4.7 && <5
+    , containers
+    , free
+    , hashable
+    , unordered-containers
+  default-language: Haskell2010
+
+executable concur-static-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_concur_static
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , concur-static
+    , containers
+    , free
+    , hashable
+    , unordered-containers
+  default-language: Haskell2010
+
+test-suite concur-static-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_concur_static
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , concur-static
+    , containers
+    , free
+    , hashable
+    , unordered-containers
+  default-language: Haskell2010

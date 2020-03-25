@@ -1,7 +1,4 @@
-{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -9,23 +6,17 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeOperators              #-}
 
-module Lib
-    ( someFunc
-    ) where
+module Lib where
 
 import Control.Applicative
 import Control.Monad.Fix
 import Control.Monad.Free
+import qualified Control.Monad.Trans.State.Strict as ST
 
 import Data.Char (toUpper)
-import Data.Hashable
-import qualified Data.HashMap.Strict as H
 import Data.Maybe (catMaybes)
 import Data.List (intersperse)
-
-import qualified GHC.Generics as G
 
 import Prelude hiding (div)
 
@@ -35,38 +26,25 @@ someFunc = putStrLn "someFunc"
 --------------------------------------------------------------------------------
 
 data Δ a = Empty
-  deriving (Eq, G.Generic, Hashable)
 
 data DOM a
   = Text (Δ String)
+  | ConstText String
   | Element String [Props a] [VDOM a]
-  deriving (Eq, G.Generic, Hashable)
-
-eqDOM :: DOM a -> DOM b -> Bool
-eqDOM = undefined
 
 data DOMF next
-  = forall a. Hashable a => View (DOM (Δ a)) (Δ a -> next)
-  | forall a b. Recur (VDOM a -> VDOM a) (a -> next)
+  = forall a. View (DOM (Δ a)) (Δ a -> next)
+  | forall a. Recur (VDOM a -> VDOM a) (a -> next)
 
 deriving instance Functor DOMF
 
 newtype VDOM a = VDOM (Free DOMF a)
-  deriving stock Functor
-  deriving newtype (Applicative, Monad)
-
-instance Hashable a => Hashable (VDOM a) where
-  hashWithSalt salt (VDOM (Pure a)) = hashWithSalt salt a
-  hashWithSalt salt (VDOM (Free (View dom _))) = hashWithSalt salt dom
-
-instance Eq a => Eq (VDOM a) where
-  (VDOM (Pure a)) == (VDOM (Pure b)) = a == b
-  (VDOM (Free (View a _))) == (VDOM (Free (View b _))) = a `eqDOM` b
+  deriving (Functor, Applicative, Monad)
 
 recur :: (VDOM a -> VDOM a) -> VDOM a
 recur f = VDOM $ liftF $ Recur f id
 
-view :: Hashable a => DOM (Δ a) -> VDOM (Δ a)
+view :: DOM (Δ a) -> VDOM (Δ a)
 view v = VDOM $ liftF $ View v id
 
 orr :: [VDOM a] -> VDOM a
@@ -74,64 +52,114 @@ orr = undefined
 
 --------------------------------------------------------------------------------
 
-data EVDOM = forall a. Hashable a => EVDOM (VDOM a)
-
-instance Eq EVDOM where
-  a == b = undefined
-
-instance Hashable EVDOM where
-  hashWithSalt salt (EVDOM vdom) = hashWithSalt salt vdom
-
 newtype Name = Name String
 
-for :: [a] -> (a -> b) -> [b]
-for = flip map
+instance Show Name where
+  show (Name name) = name
 
-generate :: Hashable a => H.HashMap EVDOM Name -> VDOM a -> String
-generate _ (VDOM (Pure a)) = undefined
-generate _ (VDOM (Free (View (Text t) next))) = undefined
-generate m (VDOM (Free (View (Element e props chs) next))) = mconcat $ intersperse "\n"
-  [ "function _" <> show 0 <> "(remove) {"
-  , "  const e = document.createElement('" <> e <> "');"
-  , ""
-  , mconcat $ for events $ \event -> mconcat $ intersperse "\n"
-      [ "e.addEventListener('" <> event <> "', function(e) {"
-      , "  "
-      , ");"
+newName :: ST.State (Int, a) Name
+newName = ST.state $ \(i, a) -> (Name $ "_" <> show i, (i + 1, a))
+
+generate :: VDOM a -> ST.State (Int, [(Name, String)]) Name
+generate (VDOM (Pure a)) = pure $ Name "end"
+generate (VDOM (Free (View (ConstText t) next))) = do
+  name <- newName
+
+  ST.modify $ \(i, m) -> (i, (name, mkBody name):m)
+  pure name
+
+  where
+    mkBody name = mconcat $ intersperse "\n"
+      [ "function " <> show name <> "(_parent, _index) {"
+      , "  const e = document.createTextNode(" <> show t <> ");"
+      , "  return e;"
+      , "}"
       ]
+
+generate (VDOM (Free (View (Element e props children) next))) = do
+  chNames <- sequence [ generate child | child <- children ]
+
+  name <- newName
+  nextName <- generate (VDOM (next Empty))
+
+  body <- mkBody name nextName chNames
+
+  ST.modify $ \(i, m) -> (i, (name, body):m)
+  pure name
+
+  where
+    mkBody name nextName chNames = pure $ mconcat $ intersperse "\n"
+      [ "function " <> show name <> "(parent, index) {"
+      , "  const e = document.createElement('" <> e <> "');"
+      , ""
+      , mconcat $ intersperse "\n"
+          [ mconcat $ intersperse "\n"
+              [ "  e.addEventListener('" <> event <> "', function() {"
+              , "    parent.removeChild(e);"
+              , "    parent.insertBefore(" <> show nextName <> "(parent, index), parent.childNodes[index]);"
+              , "  });"
+              ]
+          | event <- events
+          ]
+      , ""
+      , mconcat $ intersperse "\n"
+          [ "  e.appendChild(" <> show chName <> "(e, " <> show index <> "));"
+          | (index, chName) <- zip [0..] chNames
+          ]
+      , ""
+      , "  return e;"
+      , "}"
+      ]
+    events = [ event | Event event <- props ]
+
+generateModule :: VDOM a -> String
+generateModule vdom = mconcat $ intersperse "\n"
+  [ "<meta charset=\"utf-8\">"
+  , "<!doctype html>"
+  , "<html>"
+  , "<head>"
+  , "  <title>~</title>"
+  , "</head>"
+  , "<body style=\"margin: 0\">"
+  , "</body>"
+  , "<script>"
+  , mconcat $ intersperse "\n\n"
+      [ body
+      | (_, body) <- fns
+      ]
+  , "document.body.appendChild(" <> show startName <> "(document.body, 0));"
+  , ""
+  , "function end(_parent, _index) {"
+  , "  return document.createTextNode('END');"
+  , "};"
+  , "</script>"
+  , "</html>"
   ]
   where
-    titleCase (a:as) = toUpper a:as
-
-    events = catMaybes $ for props $ \prop -> case prop of
-      Attr _ _ -> Nothing
-      Event event -> Just event
-
-    step = generate m (VDOM (next Empty))
-    -- step = case H.lookup (EVDOM (VDOM (next Empty))) m of
-    --   Nothing -> undefined
-    --   Just (Name name) -> name
+    (startName, (_, fns)) = ST.runState (generate vdom) (0, [])
 
 --------------------------------------------------------------------------------
 
 data Props a
   = Attr String String
   | Event String
-  deriving (Show, Eq, G.Generic, Hashable)
 
 attr :: String -> Δ String -> Props a
 attr = undefined
 
 onClick :: a -> Props a
-onClick = undefined
+onClick a = Event "click"
 
 --------------------------------------------------------------------------------
 
-text :: Hashable a => Δ String -> VDOM (Δ a)
+text :: Δ String -> VDOM (Δ a)
 text = view . Text
 
-div :: [Props a] -> [VDOM a] -> VDOM a
-div = undefined
+text' :: String -> VDOM (Δ a)
+text' = view . ConstText
+
+div :: [Props (Δ a)] -> [VDOM (Δ a)] -> VDOM (Δ a)
+div props children = VDOM $ liftF $ View (Element "div" props children) id
 
 enum :: Enum a => Δ a -> (a -> VDOM b) -> VDOM b
 enum = undefined
@@ -150,6 +178,13 @@ from = undefined
 
 --------------------------------------------------------------------------------
 
+test1 = do
+  r <- div [ onClick (from 1) ] [ text' "1", text' "11", text' "111" ]
+  r <- div [ onClick (from 2) ] [ text' "2" ]
+  pure "done"
+
+--------------------------------------------------------------------------------
+
 dec :: Δ (Int -> Int)
 dec = undefined
 
@@ -159,7 +194,7 @@ inc = undefined
 toString :: Δ a -> Δ String
 toString = undefined
 
-data Action = Inc | Dec deriving (Show, G.Generic, Hashable, Enum)
+data Action = Inc | Dec deriving (Show, Enum)
 
 counter v = recur $ \next -> do
   r <- div []

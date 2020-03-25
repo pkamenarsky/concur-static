@@ -24,6 +24,7 @@ dependencies:
 - containers
 - free
 - hashable
+- transformers
 - unordered-containers
 
 library:

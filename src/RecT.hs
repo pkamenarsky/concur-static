@@ -27,6 +27,7 @@ import qualified GHC.Generics as G
 import Prelude hiding (break)
 
 data Δ a = E
+  deriving (Eq, Show)
 
 data RecF a next = forall b. Step a (Δ b -> next) | Recurse
 
@@ -38,25 +39,42 @@ newtype RecT a b = RecT (Free (RecF a) b)
 step :: a -> RecT a (Δ b)
 step a = RecT $ liftF $ Step a id
 
-unroll :: RecT a (Δ b) -> Seq a
-unroll (RecT (Pure _)) = Seq.empty
-unroll (RecT (Free (Step a next))) = a <| unroll (RecT (next E))
+unroll :: RecT a (Δ b) -> [a]
+unroll (RecT (Pure _)) = []
+unroll (RecT (Free (Step a next))) = a:unroll (RecT (next E))
 
-break :: Eq a => RecT a (Δ b) -> Seq a -> Seq a
-break (RecT (Pure _)) as = as
-break (RecT (Free (Step a next))) as = if Seq.take (Seq.length as + 1) recurse == as |> a
-  then as |> a
-  else break (RecT (next E)) (as |> a)
+break :: Eq a => RecT a (Δ b) -> [Either a (Δ b)] -> [Either a (Δ b)]
+break (RecT (Pure b)) as = as <> [Right b]
+break (RecT (Free (Step a next))) as = if take (length as + 1) recurse `subst` (as <> [Left a])
+  then as <> [Left a]
+  else break (RecT (next E)) (as <> [Left a])
   where
-    recurse = unroll (RecT (next E))
+    recurse = map Left $ unroll (RecT (next E))
 
-test :: Int -> RecT Int (Δ a)
+    subst [] [] = False
+    subst xs ys@(b:bs) = if xs == ys then True else subst (if null xs then [] else init xs) bs
+
+test3 :: Int -> RecT Int (Δ Int)
+test3 x = do
+  step 20
+  step 21
+  step 22
+  pure E
+
+test2 :: Int -> RecT Int (Δ Int)
+test2 x = do
+  step 10
+  step 11
+  test3 5
+  test2 9
+  step 12
+
+test :: Int -> RecT Int (Δ Int)
 test x = do
   step 4
   step 5
   step 6
+  test2 7
   step 7
   step 8
-  test x
-  step 9
-  test x
+  pure E

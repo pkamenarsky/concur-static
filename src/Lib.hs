@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -9,12 +10,13 @@
 
 module Lib where
 
-import Control.Applicative
+import Control.Monad (replicateM)
 import Control.Monad.Fix
 import Control.Monad.Free
 import qualified Control.Monad.Trans.State.Strict as ST
 
 import Data.Char (toUpper)
+import Data.String
 import Data.Maybe (catMaybes)
 import Data.List (intersperse)
 
@@ -25,7 +27,40 @@ someFunc = putStrLn "someFunc"
 
 --------------------------------------------------------------------------------
 
-data Δ a = Empty
+data Δ a where
+  Empty :: Δ a
+  Var   :: Name -> Δ a
+  Raw   :: String -> Δ a
+  Apply :: Δ (a -> b) -> Δ a -> Δ b
+
+toJS :: Δ a -> String
+toJS Empty = error "Empty"
+toJS (Var (Name a)) = "window._" <> a
+toJS (Raw a) = a
+toJS (Apply f a) = toJS f <> "(" <> toJS a <> ")"
+
+binary :: Num a => String -> Δ (a -> b -> c)
+binary op = Raw $ "(function(a) { return function(b) { return a " <> op <> " b; } })"
+
+instance Num a => Num (Δ a) where
+  a + b = Apply (Apply (binary "+") a) b
+  a * b = Apply (Apply (binary "*") a) b
+  abs a = Apply (Raw "(function(a} { return Math.abs(a); })") a
+  signum a = Apply (Raw "(function(a} { return Math.sign(a); })") a
+  fromInteger a = Raw (show a)
+  negate a = Apply (Raw "(function(a} { return -a; })") a
+
+instance IsString (Δ String) where
+  fromString = Raw
+
+(.<) :: Num a => Δ a -> Δ a -> Δ Bool
+a .< b = Apply (Apply (binary "<") a) b
+
+(.>) :: Num a => Δ a -> Δ a -> Δ Bool
+a .> b = Apply (Apply (binary "<") a) b
+
+a :: Δ Int
+a = 5 + 6
 
 data DOM a
   = Text (Δ String)
@@ -35,6 +70,7 @@ data DOM a
 data DOMF next
   = forall a. View (DOM (Δ a)) (Δ a -> next)
   | forall a. Recur (VDOM a -> VDOM a) (a -> next)
+  | forall a. Call Name
 
 deriving instance Functor DOMF
 
@@ -47,9 +83,6 @@ recur f = VDOM $ liftF $ Recur f id
 view :: DOM (Δ a) -> VDOM (Δ a)
 view v = VDOM $ liftF $ View v id
 
-orr :: [VDOM a] -> VDOM a
-orr = undefined
-
 --------------------------------------------------------------------------------
 
 newtype Name = Name String
@@ -61,7 +94,10 @@ newName :: ST.State (Int, a) Name
 newName = ST.state $ \(i, a) -> (Name $ "_" <> show i, (i + 1, a))
 
 generate :: VDOM a -> ST.State (Int, [(Name, String)]) Name
-generate (VDOM (Pure a)) = pure $ Name "end"
+generate (VDOM (Pure a)) = pure $ Name "next"
+generate (VDOM (Free (Call name))) = pure name
+generate (VDOM (Free (Recur vdom next))) = mfix $ \name ->
+  generate (vdom (VDOM $ liftF $ Call name))
 generate (VDOM (Free (View (ConstText t) next))) = do
   name <- newName
 
@@ -70,7 +106,7 @@ generate (VDOM (Free (View (ConstText t) next))) = do
 
   where
     mkBody name = mconcat $ intersperse "\n"
-      [ "function " <> show name <> "(_parent, _index) {"
+      [ "function " <> show name <> "(_next, _parent, _index) {"
       , "  const e = document.createTextNode(" <> show t <> ");"
       , "  return e;"
       , "}"
@@ -89,21 +125,21 @@ generate (VDOM (Free (View (Element e props children) next))) = do
 
   where
     mkBody name nextName chNames = pure $ mconcat $ intersperse "\n"
-      [ "function " <> show name <> "(parent, index) {"
+      [ "function " <> show name <> "(next, parent, index) {"
       , "  const e = document.createElement('" <> e <> "');"
       , ""
       , mconcat $ intersperse "\n"
           [ mconcat $ intersperse "\n"
               [ "  e.addEventListener('" <> event <> "', function() {"
               , "    parent.removeChild(e);"
-              , "    parent.insertBefore(" <> show nextName <> "(parent, index), parent.childNodes[index]);"
+              , "    parent.insertBefore(" <> show nextName <> "(next, parent, index), parent.childNodes[index]);"
               , "  });"
               ]
           | event <- events
           ]
       , ""
       , mconcat $ intersperse "\n"
-          [ "  e.appendChild(" <> show chName <> "(e, " <> show index <> "));"
+          [ "  e.appendChild(" <> show chName <> "(next, e, " <> show index <> "));"
           | (index, chName) <- zip [0..] chNames
           ]
       , ""
@@ -127,10 +163,10 @@ generateModule vdom = mconcat $ intersperse "\n"
       [ body
       | (_, body) <- fns
       ]
-  , "document.body.appendChild(" <> show startName <> "(document.body, 0));"
+  , "document.body.appendChild(" <> show startName <> "(end, document.body, 0));"
   , ""
-  , "function end(_parent, _index) {"
-  , "  return document.createTextNode('END');"
+  , "function end(_next, _parent, _index) {"
+  , "  return document.createTextNode('');"
   , "};"
   , "</script>"
   , "</html>"
@@ -179,9 +215,21 @@ from = undefined
 --------------------------------------------------------------------------------
 
 test1 = do
-  r <- div [ onClick (from 1) ] [ text' "1", text' "11", text' "111" ]
-  r <- div [ onClick (from 2) ] [ text' "2" ]
+  replicateM 3 $ do
+    div [ onClick (from 1) ] [ text' "1", text' "11", text' "111" ]
+    div [ onClick (from 2) ] [ text' "2" ]
   pure "done"
+
+test2 x
+  | x > 10 = pure Empty
+  | otherwise = do
+      div [ onClick (from ()) ] [ text' (show x) ]
+      test2 (x + 1)
+
+test3 = recur $ \next -> do
+  div [ onClick (from ()) ] [ text' "A" ]
+  div [] [ text' "B", test2 0 ]
+  next
 
 --------------------------------------------------------------------------------
 

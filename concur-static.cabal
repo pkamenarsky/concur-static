@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 44ac468a1076eab3779bf16e8d2962c566cd7bbe6a49986f4a0edb187cfb2dbc
+-- hash: 7f8728a33e8fafb7fc7ef63bddf69cb8f82403105e68e37289d197b75b86837c
 
 name:           concur-static
 version:        0.1.0.0
@@ -28,7 +28,6 @@ source-repository head
 library
   exposed-modules:
       Lib
-      RecT
   other-modules:
       Paths_concur_static
   hs-source-dirs:

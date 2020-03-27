@@ -118,25 +118,31 @@ generate (VDOM (Free (View dom@(Element e props children) next))) = do
   chNames <- sequence [ generate child | child <- children ]
 
   name <- newName
-  nextName <- generate (VDOM $ next $ head $ enumAll dom)
 
   nexts <- traverse generate (map (VDOM . next) (enumAll dom))
 
-  body <- mkBody name nextName chNames
+  body <- mkBody name nexts chNames
 
   ST.modify $ \(i, m) -> (i, (name, body):m)
   pure name
 
   where
-    mkBody name nextName chNames = pure $ mconcat $ intersperse "\n"
+    mkBody name nexts chNames = pure $ mconcat $ intersperse "\n"
       [ "function " <> show name <> "(kill, parent, index) {"
       , "  const e = document.createElement('" <> e <> "');"
       , ""
       , "  const suicide = function(r) {"
       , "    parent.removeChild(e);"
-      , if nextName == Name "done"
-          then "    kill();"
-          else "    " <> show nextName <> "(kill, parent, index);"
+      , mconcat $ intersperse "\n"
+          [ mconcat $ intersperse "\n"
+              [ "  if (r == " <> show (fromEnum value) <> ") {"
+              , if nextName == Name "done"
+                  then "    kill();"
+                  else "    " <> show nextName <> "(kill, parent, index);"
+              , "  }"
+              ]
+          | (value, nextName) <- zip (enumAll dom) nexts
+          ]
       , "  };"
       , ""
       , "  parent.insertBefore(e, parent.childNodes[index]);"
@@ -203,6 +209,8 @@ div props children = VDOM $ liftF $ View (Element "div" props children) id
 
 data A = One | Two deriving (Eq, Enum, Bounded)
 
+t = enumAll (undefined :: [Int])
+
 test1 = do
   replicateM 3 $ do
     div [ onClick One ] [ text "1", text "11", text "111" ]
@@ -227,25 +235,3 @@ sidebar = loop $ \recur -> do
 
 test4 :: VDOM ()
 test4 = div [] [ sidebar, test3 ]
-
---------------------------------------------------------------------------------
-
-dec :: Δ (Int -> Int)
-dec = undefined
-
-inc :: Δ (Int -> Int)
-inc = undefined
-
-toString :: Δ a -> Δ String
-toString = undefined
-
-data Action = Inc | Dec deriving (Show, Enum, Bounded)
-
-counter v = loop $ \recur -> do
-  r <- div []
-    [ div [ onClick Inc ] [ text "-" ]
-    , div [] [ text "0" ]
-    , div [ onClick Dec ] [ text "+" ]
-    ]
-
-  recur

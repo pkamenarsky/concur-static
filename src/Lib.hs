@@ -71,6 +71,7 @@ data DOMF next
   = forall a. View (DOM (Δ a)) (Δ a -> next)
   | forall a. Recur (VDOM a -> VDOM a) (a -> next)
   | forall a. Call Name
+  | forall a b. Enum a => Enum (Δ a) (a -> VDOM (Δ b)) (Δ b -> next)
 
 deriving instance Functor DOMF
 
@@ -82,6 +83,9 @@ recur f = VDOM $ liftF $ Recur f id
 
 view :: DOM (Δ a) -> VDOM (Δ a)
 view v = VDOM $ liftF $ View v id
+
+enum :: Enum a => Δ a -> (a -> VDOM (Δ b)) -> VDOM (Δ b)
+enum v f = VDOM $ liftF $ Enum v f id
 
 --------------------------------------------------------------------------------
 
@@ -98,6 +102,8 @@ generate (VDOM (Pure a)) = pure $ Name "done"
 generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Recur vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
+generate (VDOM (Free (Enum v f next))) = do
+  undefined
 generate (VDOM (Free (View (ConstText t) next))) = do
   name <- newName
 
@@ -197,9 +203,6 @@ text' = view . ConstText
 
 div :: [Props (Δ a)] -> [VDOM (Δ a)] -> VDOM (Δ a)
 div props children = VDOM $ liftF $ View (Element "div" props children) id
-
-enum :: Enum a => Δ a -> (a -> VDOM b) -> VDOM b
-enum = undefined
 
 watch :: Δ a -> VDOM b -> VDOM b
 watch = undefined

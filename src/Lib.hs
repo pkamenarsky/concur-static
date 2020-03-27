@@ -20,6 +20,8 @@ import Data.String
 import Data.Maybe (catMaybes)
 import Data.List (intersperse)
 
+import qualified Replica.VDOM.Types as V
+
 import Prelude hiding (div)
 
 import Debug.Trace
@@ -28,6 +30,10 @@ someFunc :: IO ()
 someFunc = putStrLn "someFunc"
 
 --------------------------------------------------------------------------------
+
+-- TODO: convert to Text
+
+-- type DOM a = V.VDOM ((String, String))
 
 data DOM a
   = Text String

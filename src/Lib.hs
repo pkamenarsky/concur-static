@@ -85,7 +85,7 @@ view v = VDOM $ liftF $ View v id
 
 --------------------------------------------------------------------------------
 
-newtype Name = Name String
+newtype Name = Name String deriving (Eq)
 
 instance Show Name where
   show (Name name) = name
@@ -94,7 +94,7 @@ newName :: ST.State (Int, a) Name
 newName = ST.state $ \(i, a) -> (Name $ "_" <> show i, (i + 1, a))
 
 generate :: VDOM a -> ST.State (Int, [(Name, String)]) Name
-generate (VDOM (Pure a)) = pure $ Name "next"
+generate (VDOM (Pure a)) = pure $ Name "done"
 generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Recur vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
@@ -106,8 +106,11 @@ generate (VDOM (Free (View (ConstText t) next))) = do
 
   where
     mkBody name = mconcat $ intersperse "\n"
-      [ "function " <> show name <> "(_next, _parent, _index) {"
+      [ "function " <> show name <> "(_next, parent, index) {"
       , "  const e = document.createTextNode(" <> show t <> ");"
+      , ""
+      , "  parent.insertBefore(e, parent.childNodes[index]);"
+      , ""
       , "  return e;"
       , "}"
       ]
@@ -125,21 +128,30 @@ generate (VDOM (Free (View (Element e props children) next))) = do
 
   where
     mkBody name nextName chNames = pure $ mconcat $ intersperse "\n"
-      [ "function " <> show name <> "(next, parent, index) {"
+      [ "function " <> show name <> "(kill, parent, index) {"
       , "  const e = document.createElement('" <> e <> "');"
+      , ""
+      , "  const suicide = function() {"
+      , "    parent.removeChild(parent.childNodes[index]);"
+      , "    if (kill) kill();"
+      , "  };"
+      , ""
+      , "  parent.insertBefore(e, parent.childNodes[index]);"
       , ""
       , mconcat $ intersperse "\n"
           [ mconcat $ intersperse "\n"
               [ "  e.addEventListener('" <> event <> "', function() {"
-              , "    parent.removeChild(e);"
-              , "    parent.insertBefore(" <> show nextName <> "(next, parent, index), parent.childNodes[index]);"
+              , "    parent.removeChild(parent.childNodes[index]);"
+              , if nextName == Name "done"
+                  then "    if (kill) kill();"
+                  else "    " <> show nextName <> "(null, parent, index);"
               , "  });"
               ]
           | event <- events
           ]
       , ""
       , mconcat $ intersperse "\n"
-          [ "  e.appendChild(" <> show chName <> "(next, e, " <> show index <> "));"
+          [ "  " <> show chName <> "(suicide, e, " <> show index <> ");"
           | (index, chName) <- zip [0..] chNames
           ]
       , ""

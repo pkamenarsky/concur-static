@@ -15,10 +15,13 @@ import Control.Monad.Fix
 import Control.Monad.Free
 import qualified Control.Monad.Trans.State.Strict as ST
 
+import qualified Data.ByteString.Lazy.Char8 as C
 import Data.Char (toUpper)
 import Data.String
 import Data.Maybe (catMaybes)
 import Data.List (intersperse)
+
+import Text.Jasmine (minify)
 
 import Prelude hiding (div)
 
@@ -68,20 +71,6 @@ generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
 generate (VDOM (Free (View (Text t) next))) = pure $ Name ("t('" <> t <> "')")
--- generate (VDOM (Free (View (Text t) next))) = do
---   name <- newName
--- 
---   ST.modify $ \(i, m) -> (i, (name, mkBody name):m)
---   pure name
--- 
---   where
---     mkBody name = mconcat $ intersperse "\n"
---       [ "function " <> show name <> "(_, parent, index) {"
---       , "  const e = document.createTextNode(" <> show t <> ");"
---       , "  parent.insertBefore(e, parent.childNodes[index]);"
---       , "}"
---       ]
-
 generate (VDOM (Free (View dom@(Element e props children) next))) = do
   chNames <- traverse generate children
   nexts   <- traverse generate (map (VDOM . next) (enumAll dom))
@@ -139,24 +128,49 @@ generateModule vdom = mconcat $ intersperse "\n"
   , "<body style=\"margin: 0\">"
   , "</body>"
   , "<script>"
-  , mconcat $ intersperse "\n\n"
-      [ body
-      | (_, body) <- fns
-      ]
-  , show startName <> "(end, document.body, 0);"
-  , "function end() {}"
-  , ""
-  ,"function t(t) {"
-  , "  return function (_, parent, index) {"
-  , "    const e = document.createTextNode(t);"
-  , "    parent.insertBefore(e, parent.childNodes[index]);"
-  , "  };"
-  , "}"
+  , jsmin
   , "</script>"
   , "</html>"
   ]
   where
+    js = mconcat $ intersperse "\n"
+      [ mconcat $ intersperse "\n\n"
+          [ body
+          | (_, body) <- fns
+          ]
+      , show startName <> "(end, document.body, 0);"
+      , "function end() {}"
+      , ""
+      ,"function t(t) {"
+      , "  return function (_, parent, index) {"
+      , "    const e = document.createTextNode(t);"
+      , "    parent.insertBefore(e, parent.childNodes[index]);"
+      , "  };"
+      , "}"
+      ]
+
+    jsmin = C.unpack $ minify (C.pack js)
+
     (startName, (_, fns)) = ST.runState (generate vdom) (0, [])
+
+--------------------------------------------------------------------------------
+
+range :: forall a. Enum a => Bounded a => a -> Int
+range _ = fromEnum (maxBound :: a) - fromEnum (minBound :: a)
+
+offset :: forall a. Enum a => Bounded a => a -> Int
+offset a = fromEnum (minBound :: a)
+
+instance (Bounded a, Bounded b, Enum a, Enum b) => Enum (Either a b) where
+  toEnum x
+    | x >= range (undefined :: a) + 1 = Right $ toEnum (x + offset (undefined :: b) - range (undefined :: a) - 1)
+    | otherwise = Left $ toEnum (x + offset (undefined :: a))
+  fromEnum (Left a) = fromEnum a - offset a
+  fromEnum (Right b) = range (undefined :: a) + 1 + fromEnum b - offset b
+
+instance (Bounded a, Bounded b) => Bounded (Either a b) where
+  minBound = Left minBound
+  maxBound = Right maxBound
 
 --------------------------------------------------------------------------------
 
@@ -181,15 +195,12 @@ text = view . Text
 div :: Enum a => Bounded a => [Props a] -> [VDOM a] -> VDOM a
 div props children = VDOM $ liftF $ View (Element "div" props children) id
 
-div' :: [Props ()] -> [VDOM ()] -> VDOM ()
-div' = div
-
 button :: Enum a => Bounded a => [Props a] -> [VDOM a] -> VDOM a
 button props children = VDOM $ liftF $ View (Element "button" props children) id
 
 --------------------------------------------------------------------------------
 
-data A = One | Two deriving (Eq, Enum, Bounded)
+data A = One | Two deriving (Show, Eq, Enum, Bounded)
 
 test1 = do
   div [ onClick One ] [ text "666" ]
@@ -222,37 +233,16 @@ test5 = do
 
 test7 = loop $ \recur -> do
   r <- div []
-    [ button [ onClick One ] [ text "Button A" ]
-    , button [ onClick Two ] [ text "Button B" ]
+    [ Left  <$> button [ onClick () ] [ text "Button A" ]
+    , Right <$> button [ onClick () ] [ text "Button B" ]
     ]
 
   case r of
-    One -> div [ onClick () ] [ text "You clicked A" ]
-    Two -> div [ onClick () ] [ text "You clicked B" ]
+    Left _  -> div [ onClick () ] [ text "You clicked A!!!" ]
+    Right _ -> div [ onClick () ] [ text "You clicked B!!!" ]
 
   button [ onClick () ] [ text "Click for next try" ]
 
   recur
 
 test8 = unit $ div [] (replicate 10 test7)
-
--- range :: forall t a. Enum a => Bounded a => t a -> Int
--- range _ = fromEnum (maxBound :: a) - fromEnum (minBound :: a)
--- 
--- instance (Bounded a, Enum a, Enum b) => Enum (Either a b) where
---   toEnum x
---     | x >= range (undefined :: [a]) = Right (toEnum (x - range (undefined :: [a])))
---     | otherwise = Left (toEnum x)
---   fromEnum (Left a) = fromEnum a
---   fromEnum (Right b) = fromEnum b + range (undefined :: [a]) -- TODO: Proxy
--- 
--- instance (Bounded a, Bounded b) => Bounded (Either a b) where
---   minBound = Left minBound
---   maxBound = Right maxBound
--- 
--- test6 = do
---   r <- div []
---     [ Left  <$> div [ onClick () ] [ text "bla" ]
---     , Right <$> div [ onClick () ] [ text "bla2" ]
---     ]
---   pure ()

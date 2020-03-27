@@ -68,10 +68,10 @@ data DOM a
   | Element String [Props a] [VDOM a]
 
 data DOMF next
-  = forall a. View (DOM (Δ a)) (Δ a -> next)
+  = forall a. Enum a => View (DOM (Δ a)) (Δ a -> next)
   | forall a. Loop (VDOM a -> VDOM a) (a -> next)
   | forall a. Call Name
-  | forall a b. Enum a => Enum (Δ a) (a -> VDOM (Δ b)) (Δ b -> next)
+  | forall a b. (Enum a, Bounded a) => Enum (Δ a) (a -> VDOM (Δ b)) (Δ b -> next)
 
 deriving instance Functor DOMF
 
@@ -81,10 +81,10 @@ newtype VDOM a = VDOM (Free DOMF a)
 loop :: (VDOM a -> VDOM a) -> VDOM a
 loop f = VDOM $ liftF $ Loop f id
 
-view :: DOM (Δ a) -> VDOM (Δ a)
+view :: Enum a => DOM (Δ a) -> VDOM (Δ a)
 view v = VDOM $ liftF $ View v id
 
-enum :: Enum a => Δ a -> (a -> VDOM (Δ b)) -> VDOM (Δ b)
+enum :: Enum a => Bounded a => Δ a -> (a -> VDOM (Δ b)) -> VDOM (Δ b)
 enum v f = VDOM $ liftF $ Enum v f id
 
 --------------------------------------------------------------------------------
@@ -97,13 +97,33 @@ instance Show Name where
 newName :: ST.State (Int, a) Name
 newName = ST.state $ \(i, a) -> (Name $ "_" <> show i, (i + 1, a))
 
+enumAll :: Enum a => Bounded a => Δ a -> [a]
+enumAll _ = map toEnum [minBound..maxBound]
+
 generate :: VDOM a -> ST.State (Int, [(Name, String)]) Name
 generate (VDOM (Pure a)) = pure $ Name "done"
 generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
+
 generate (VDOM (Free (Enum v f next))) = do
-  undefined
+  name <- newName
+  nexts <- traverse generate (map f (enumAll v))
+
+  ST.modify $ \(i, m) -> (i, (name, mkBody name nexts):m)
+  pure name
+
+  where
+    mkBody name nexts = mconcat $ intersperse "\n"
+      [ "function " <> show name <> "(kill, parent, index) {"
+      , "  parent.insertBefore(e, parent.childNodes[index]);"
+      , mconcat $ intersperse "\n"
+          [ "  if ("
+          | (next, a) <- zip nexts (enumAll v)
+          ]
+      , "}"
+      ]
+
 generate (VDOM (Free (View (ConstText t) next))) = do
   name <- newName
 
@@ -112,7 +132,7 @@ generate (VDOM (Free (View (ConstText t) next))) = do
 
   where
     mkBody name = mconcat $ intersperse "\n"
-      [ "function " <> show name <> "(_next, parent, index) {"
+      [ "function " <> show name <> "(_, parent, index) {"
       , "  const e = document.createTextNode(" <> show t <> ");"
       , "  parent.insertBefore(e, parent.childNodes[index]);"
       , "}"
@@ -195,13 +215,13 @@ onClick a = Event "click"
 
 --------------------------------------------------------------------------------
 
-text :: Δ String -> VDOM (Δ a)
+text :: Enum a => Δ String -> VDOM (Δ a)
 text = view . Text
 
-text' :: String -> VDOM (Δ a)
+text' :: Enum a => String -> VDOM (Δ a)
 text' = view . ConstText
 
-div :: [Props (Δ a)] -> [VDOM (Δ a)] -> VDOM (Δ a)
+div :: Enum a => [Props (Δ a)] -> [VDOM (Δ a)] -> VDOM (Δ a)
 div props children = VDOM $ liftF $ View (Element "div" props children) id
 
 watch :: Δ a -> VDOM b -> VDOM b
@@ -253,7 +273,7 @@ inc = undefined
 toString :: Δ a -> Δ String
 toString = undefined
 
-data Action = Inc | Dec deriving (Show, Enum)
+data Action = Inc | Dec deriving (Show, Enum, Bounded)
 
 counter v = loop $ \recur -> do
   r <- div []

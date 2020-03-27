@@ -108,10 +108,7 @@ generate (VDOM (Free (View (ConstText t) next))) = do
     mkBody name = mconcat $ intersperse "\n"
       [ "function " <> show name <> "(_next, parent, index) {"
       , "  const e = document.createTextNode(" <> show t <> ");"
-      , ""
       , "  parent.insertBefore(e, parent.childNodes[index]);"
-      , ""
-      , "  return e;"
       , "}"
       ]
 
@@ -132,8 +129,10 @@ generate (VDOM (Free (View (Element e props children) next))) = do
       , "  const e = document.createElement('" <> e <> "');"
       , ""
       , "  const suicide = function() {"
-      , "    parent.removeChild(parent.childNodes[index]);"
-      , "    if (kill) kill();"
+      , "    parent.removeChild(e);"
+      , if nextName == Name "done"
+          then "    if (kill) kill();"
+          else "    " <> show nextName <> "(kill, parent, index);"
       , "  };"
       , ""
       , "  parent.insertBefore(e, parent.childNodes[index]);"
@@ -141,10 +140,7 @@ generate (VDOM (Free (View (Element e props children) next))) = do
       , mconcat $ intersperse "\n"
           [ mconcat $ intersperse "\n"
               [ "  e.addEventListener('" <> event <> "', function() {"
-              , "    parent.removeChild(parent.childNodes[index]);"
-              , if nextName == Name "done"
-                  then "    if (kill) kill();"
-                  else "    " <> show nextName <> "(null, parent, index);"
+              , "    suicide();"
               , "  });"
               ]
           | event <- events
@@ -154,8 +150,6 @@ generate (VDOM (Free (View (Element e props children) next))) = do
           [ "  " <> show chName <> "(suicide, e, " <> show index <> ");"
           | (index, chName) <- zip [0..] chNames
           ]
-      , ""
-      , "  return e;"
       , "}"
       ]
     events = [ event | Event event <- props ]
@@ -175,11 +169,7 @@ generateModule vdom = mconcat $ intersperse "\n"
       [ body
       | (_, body) <- fns
       ]
-  , "document.body.appendChild(" <> show startName <> "(end, document.body, 0));"
-  , ""
-  , "function end(_next, _parent, _index) {"
-  , "  return document.createTextNode('');"
-  , "};"
+  , show startName <> "(null, document.body, 0);"
   , "</script>"
   , "</html>"
   ]
@@ -230,7 +220,7 @@ test1 = do
   replicateM 3 $ do
     div [ onClick (from 1) ] [ text' "1", text' "11", text' "111" ]
     div [ onClick (from 2) ] [ text' "2" ]
-  pure "done"
+  pure Empty
 
 test2 x
   | x > 10 = pure Empty
@@ -239,8 +229,8 @@ test2 x
       test2 (x + 1)
 
 test3 = recur $ \next -> do
-  div [ onClick (from ()) ] [ text' "A" ]
-  div [] [ text' "B", test2 0 ]
+  div [] [ div [ onClick (from ()) ] [ text' "A" ], test1 ]
+  div [] [ text' "B", test2 0, test2 0 ]
   next
 
 --------------------------------------------------------------------------------

@@ -10,7 +10,7 @@
 
 module Lib where
 
-import Control.Monad (replicateM)
+import Control.Monad (replicateM_)
 import Control.Monad.Fix
 import Control.Monad.Free
 import qualified Control.Monad.Trans.State.Strict as ST
@@ -22,45 +22,12 @@ import Data.List (intersperse)
 
 import Prelude hiding (div)
 
+import Debug.Trace
+
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
 
 --------------------------------------------------------------------------------
-
-data Δ a where
-  Empty :: Δ a
-  Var   :: Name -> Δ a
-  Raw   :: String -> Δ a
-  Apply :: Δ (a -> b) -> Δ a -> Δ b
-
-toJS :: Δ a -> String
-toJS Empty = error "Empty"
-toJS (Var (Name a)) = "window._" <> a
-toJS (Raw a) = a
-toJS (Apply f a) = toJS f <> "(" <> toJS a <> ")"
-
-binary :: Num a => String -> Δ (a -> b -> c)
-binary op = Raw $ "(function(a) { return function(b) { return a " <> op <> " b; } })"
-
-instance Num a => Num (Δ a) where
-  a + b = Apply (Apply (binary "+") a) b
-  a * b = Apply (Apply (binary "*") a) b
-  abs a = Apply (Raw "(function(a} { return Math.abs(a); })") a
-  signum a = Apply (Raw "(function(a} { return Math.sign(a); })") a
-  fromInteger a = Raw (show a)
-  negate a = Apply (Raw "(function(a} { return -a; })") a
-
-instance IsString (Δ String) where
-  fromString = Raw
-
-(.<) :: Num a => Δ a -> Δ a -> Δ Bool
-a .< b = Apply (Apply (binary "<") a) b
-
-(.>) :: Num a => Δ a -> Δ a -> Δ Bool
-a .> b = Apply (Apply (binary "<") a) b
-
-a :: Δ Int
-a = 5 + 6
 
 data DOM a
   = Text String
@@ -84,7 +51,7 @@ view v = VDOM $ liftF $ View v id
 
 --------------------------------------------------------------------------------
 
-newtype Name = Name String deriving (Eq)
+data Name = Name String | Done Int deriving (Eq)
 
 instance Show Name where
   show (Name name) = name
@@ -92,70 +59,70 @@ instance Show Name where
 newName :: ST.State (Int, a) Name
 newName = ST.state $ \(i, a) -> (Name $ "_" <> show i, (i + 1, a))
 
-enumAll :: Enum a => Bounded a => t a -> [a]
-enumAll _ = map toEnum [minBound..maxBound]
+enumAll :: forall t a. Enum a => Bounded a => t a -> [a]
+enumAll _ = [(minBound :: a)..maxBound]
 
 generate :: Enum a => Bounded a => VDOM a -> ST.State (Int, [(Name, String)]) Name
-generate (VDOM (Pure a)) = pure $ Name "done"
+generate (VDOM (Pure a)) = pure $ Done (fromEnum a)
 generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
-generate (VDOM (Free (View (Text t) next))) = do
-  name <- newName
-
-  ST.modify $ \(i, m) -> (i, (name, mkBody name):m)
-  pure name
-
-  where
-    mkBody name = mconcat $ intersperse "\n"
-      [ "function " <> show name <> "(_, parent, index) {"
-      , "  const e = document.createTextNode(" <> show t <> ");"
-      , "  parent.insertBefore(e, parent.childNodes[index]);"
-      , "}"
-      ]
+generate (VDOM (Free (View (Text t) next))) = pure $ Name ("t('" <> t <> "')")
+-- generate (VDOM (Free (View (Text t) next))) = do
+--   name <- newName
+-- 
+--   ST.modify $ \(i, m) -> (i, (name, mkBody name):m)
+--   pure name
+-- 
+--   where
+--     mkBody name = mconcat $ intersperse "\n"
+--       [ "function " <> show name <> "(_, parent, index) {"
+--       , "  const e = document.createTextNode(" <> show t <> ");"
+--       , "  parent.insertBefore(e, parent.childNodes[index]);"
+--       , "}"
+--       ]
 
 generate (VDOM (Free (View dom@(Element e props children) next))) = do
-  chNames <- sequence [ generate child | child <- children ]
+  chNames <- traverse generate children
+  nexts   <- traverse generate (map (VDOM . next) (enumAll dom))
 
-  name <- newName
-
-  nexts <- traverse generate (map (VDOM . next) (enumAll dom))
-
-  body <- mkBody name nexts chNames
+  name    <- newName
+  body    <- mkBody name nexts chNames
 
   ST.modify $ \(i, m) -> (i, (name, body):m)
   pure name
 
   where
     mkBody name nexts chNames = pure $ mconcat $ intersperse "\n"
-      [ "function " <> show name <> "(kill, parent, index) {"
+      [ "function " <> show name <> "(k, parent, index) {"
       , "  const e = document.createElement('" <> e <> "');"
+      , "  parent.insertBefore(e, parent.childNodes[index]);"
       , ""
-      , "  const suicide = function(r) {"
+      , "  function next(r) {"
       , "    parent.removeChild(e);"
+      , "    switch (r) {"
       , mconcat $ intersperse "\n"
-          [ mconcat $ intersperse "\n"
-              [ "  if (r == " <> show (fromEnum value) <> ") {"
-              , if nextName == Name "done"
-                  then "    kill();"
-                  else "    " <> show nextName <> "(kill, parent, index);"
-              , "  }"
+          [ mconcat
+              [ "      case " <> show (fromEnum value) <> ": "
+              , case nextName of
+                  Done r        -> "k(" <> show r <> "); "
+                  Name nextName -> nextName <> "(k, parent, index); "
+              , "break;"
               ]
           | (value, nextName) <- zip (enumAll dom) nexts
           ]
+      , "    }"
       , "  };"
-      , ""
-      , "  parent.insertBefore(e, parent.childNodes[index]);"
       , ""
       , mconcat $ intersperse "\n"
           [ mconcat $ intersperse "\n"
-              [ "  e.addEventListener('" <> event <> "', suicide(" <> show (fromEnum value) <> "));"
+              [ "  e.addEventListener('" <> event <> "', function () { next(" <> show (fromEnum value) <> ") });"
               ]
           | Event event value <- props
           ]
       , ""
       , mconcat $ intersperse "\n"
-          [ "  " <> show chName <> "(suicide, e, " <> show index <> ");"
+          [ "  " <> show chName <> "(next, e, " <> show index <> ");"
           | (index, chName) <- zip [0..] chNames
           ]
       , "}"
@@ -179,6 +146,12 @@ generateModule vdom = mconcat $ intersperse "\n"
   , show startName <> "(end, document.body, 0);"
   , "function end() {}"
   , ""
+  ,"function t(t) {"
+  , "  return function (_, parent, index) {"
+  , "    const e = document.createTextNode(t);"
+  , "    parent.insertBefore(e, parent.childNodes[index]);"
+  , "  };"
+  , "}"
   , "</script>"
   , "</html>"
   ]
@@ -191,7 +164,7 @@ data Props a
   = Attr String String
   | Event String a
 
-attr :: String -> Δ String -> Props a
+attr :: String -> String -> Props a
 attr = undefined
 
 onClick :: a -> Props a
@@ -199,22 +172,28 @@ onClick a = Event "click" a
 
 --------------------------------------------------------------------------------
 
+unit :: VDOM () -> VDOM ()
+unit = id
+
 text :: Enum a => Bounded a => String -> VDOM a
 text = view . Text
 
 div :: Enum a => Bounded a => [Props a] -> [VDOM a] -> VDOM a
 div props children = VDOM $ liftF $ View (Element "div" props children) id
 
+div' :: [Props ()] -> [VDOM ()] -> VDOM ()
+div' = div
+
+button :: Enum a => Bounded a => [Props a] -> [VDOM a] -> VDOM a
+button props children = VDOM $ liftF $ View (Element "button" props children) id
+
 --------------------------------------------------------------------------------
 
 data A = One | Two deriving (Eq, Enum, Bounded)
 
-t = enumAll (undefined :: [Int])
-
 test1 = do
-  replicateM 3 $ do
-    div [ onClick One ] [ text "1", text "11", text "111" ]
-    div [ onClick Two ] [ text "2" ]
+  div [ onClick One ] [ text "666" ]
+  div [ onClick Two ] [ text "777" ]
   pure ()
 
 test2 x
@@ -235,3 +214,45 @@ sidebar = loop $ \recur -> do
 
 test4 :: VDOM ()
 test4 = div [] [ sidebar, test3 ]
+
+test5 = do
+  div [ onClick () ] [ text "bla" ]
+  div [ onClick () ] [ text "bla2" ]
+  pure ()
+
+test7 = loop $ \recur -> do
+  r <- div []
+    [ button [ onClick One ] [ text "Button A" ]
+    , button [ onClick Two ] [ text "Button B" ]
+    ]
+
+  case r of
+    One -> div [ onClick () ] [ text "You clicked A" ]
+    Two -> div [ onClick () ] [ text "You clicked B" ]
+
+  button [ onClick () ] [ text "Click for next try" ]
+
+  recur
+
+test8 = unit $ div [] (replicate 10 test7)
+
+-- range :: forall t a. Enum a => Bounded a => t a -> Int
+-- range _ = fromEnum (maxBound :: a) - fromEnum (minBound :: a)
+-- 
+-- instance (Bounded a, Enum a, Enum b) => Enum (Either a b) where
+--   toEnum x
+--     | x >= range (undefined :: [a]) = Right (toEnum (x - range (undefined :: [a])))
+--     | otherwise = Left (toEnum x)
+--   fromEnum (Left a) = fromEnum a
+--   fromEnum (Right b) = fromEnum b + range (undefined :: [a]) -- TODO: Proxy
+-- 
+-- instance (Bounded a, Bounded b) => Bounded (Either a b) where
+--   minBound = Left minBound
+--   maxBound = Right maxBound
+-- 
+-- test6 = do
+--   r <- div []
+--     [ Left  <$> div [ onClick () ] [ text "bla" ]
+--     , Right <$> div [ onClick () ] [ text "bla2" ]
+--     ]
+--   pure ()

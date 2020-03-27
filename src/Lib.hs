@@ -69,7 +69,7 @@ data DOM a
 
 data DOMF next
   = forall a. View (DOM (Δ a)) (Δ a -> next)
-  | forall a. Recur (VDOM a -> VDOM a) (a -> next)
+  | forall a. Loop (VDOM a -> VDOM a) (a -> next)
   | forall a. Call Name
   | forall a b. Enum a => Enum (Δ a) (a -> VDOM (Δ b)) (Δ b -> next)
 
@@ -78,8 +78,8 @@ deriving instance Functor DOMF
 newtype VDOM a = VDOM (Free DOMF a)
   deriving (Functor, Applicative, Monad)
 
-recur :: (VDOM a -> VDOM a) -> VDOM a
-recur f = VDOM $ liftF $ Recur f id
+loop :: (VDOM a -> VDOM a) -> VDOM a
+loop f = VDOM $ liftF $ Loop f id
 
 view :: DOM (Δ a) -> VDOM (Δ a)
 view v = VDOM $ liftF $ View v id
@@ -100,7 +100,7 @@ newName = ST.state $ \(i, a) -> (Name $ "_" <> show i, (i + 1, a))
 generate :: VDOM a -> ST.State (Int, [(Name, String)]) Name
 generate (VDOM (Pure a)) = pure $ Name "done"
 generate (VDOM (Free (Call name))) = pure name
-generate (VDOM (Free (Recur vdom next))) = mfix $ \name ->
+generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
 generate (VDOM (Free (Enum v f next))) = do
   undefined
@@ -230,15 +230,15 @@ test2 x
       div [ onClick (from ()) ] [ text' (show x) ]
       test2 (x + 1)
 
-test3 = recur $ \next -> do
+test3 = loop $ \recur -> do
   div [] [ div [ onClick (from ()) ] [ text' "A" ], test1 ]
   div [] [ text' "B", test2 0, test2 0 ]
-  next
+  recur
 
-sidebar = recur $ \next -> do
+sidebar = loop $ \recur -> do
   div [ onClick (from ()) ] [ text' "BLACK" ] 
   div [ onClick (from ()) ] [ text' "WHITE" ] 
-  next
+  recur
 
 test4 = div [] [ sidebar, test3 ]
 
@@ -255,7 +255,7 @@ toString = undefined
 
 data Action = Inc | Dec deriving (Show, Enum)
 
-counter v = recur $ \next -> do
+counter v = loop $ \recur -> do
   r <- div []
     [ div [ onClick (from Inc) ] [ text (from "-") ]
     , div [] [ text (toString v) ]
@@ -265,7 +265,7 @@ counter v = recur $ \next -> do
   enum r $ \r -> case r of
     Dec -> do
       modify v dec
-      next
+      recur
     Inc -> do
       modify v inc
-      next
+      recur

@@ -1,31 +1,21 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TupleSections              #-}
 
 module Lib where
 
 import Control.Monad (replicateM_)
-import Control.Monad.Fix
-import Control.Monad.Free
+import Control.Monad.Fix (mfix)
+import Control.Monad.Free (Free (Pure, Free), liftF)
 import qualified Control.Monad.Trans.State.Strict as ST
 
 import Data.Char (toUpper)
-import Data.String
 import Data.Maybe (catMaybes)
 import Data.List (intersperse)
 
 import Prelude hiding (div)
-
-import Debug.Trace
-
-someFunc :: IO ()
-someFunc = putStrLn "someFunc"
 
 --------------------------------------------------------------------------------
 
@@ -100,13 +90,29 @@ generate (VDOM (Free (View dom@(Element e props children) next))) = do
       , "    }"
       , "  };"
       , ""
+      , "  // Attributes"
       , mconcat $ intersperse "\n"
-          [ mconcat $ intersperse "\n"
-              [ "  e.addEventListener('" <> event <> "', function () { next(" <> show (fromEnum value) <> ") });"
-              ]
+          [ "  e.setAttribute('" <> key <> "', " <> value <> ");"
+          | Attr key value' <- props
+          , let value = case value' of
+                  AString v   -> "'" <> v <> "'"
+                  ANumber v   -> show v
+                  ABool True  -> "true"
+                  ABool False -> "false"
+          ]
+      , mconcat $ intersperse "\n"
+          [ "  e.style['" <> key <> "'] = '" <> value <> "';"
+          | Style pairs <- props
+          , (key, value) <- pairs
+          ]
+      , ""
+      , "  // Events"
+      , mconcat $ intersperse "\n"
+          [ "  e.addEventListener('" <> event <> "', function () { next(" <> show (fromEnum value) <> ") });"
           | Event event value <- props
           ]
       , ""
+      , "  // Children"
       , mconcat $ intersperse "\n"
           [ "  " <> show chName <> "(next, e, " <> show index <> ");"
           | (index, chName) <- zip [0..] chNames
@@ -169,12 +175,21 @@ instance (Bounded a, Bounded b) => Bounded (Either a b) where
 
 --------------------------------------------------------------------------------
 
+data AValue = AString String | ANumber Float | ABool Bool
+
 data Props a
-  = Attr String String
+  = Attr String AValue
+  | Style [(String, String)]
   | Event String a
 
 attr :: String -> String -> Props a
-attr = undefined
+attr k = Attr k . AString
+
+disabled :: Bool -> Props a
+disabled = Attr "disabled" . ABool
+
+style :: [(String, String)] -> Props a
+style = Style
 
 onClick :: a -> Props a
 onClick a = Event "click" a
@@ -214,8 +229,8 @@ test3 = loop $ \recur -> do
   recur
 
 sidebar = loop $ \recur -> do
-  div [ onClick () ] [ text "BLACK" ] 
-  div [ onClick () ] [ text "WHITE" ] 
+  div [ style [("backgroundColor", "#777"), ("color", "fff")], onClick () ] [ text "BLACK" ] 
+  div [ style [("backgroundColor", "#333"), ("color", "f00")], onClick () ] [ text "WHITE" ] 
   recur
 
 test4 :: VDOM ()
@@ -228,7 +243,7 @@ test5 = do
 
 test7 = loop $ \recur -> do
   r <- div []
-    [ Left  <$> button [ onClick () ] [ text "Button A" ]
+    [ Left  <$> button [ disabled True, onClick () ] [ text "Button A" ]
     , Right <$> button [ onClick () ] [ text "Button B" ]
     ]
 

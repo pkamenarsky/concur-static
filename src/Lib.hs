@@ -131,7 +131,7 @@ generate (VDOM (Free (View (Element e props children) next))) = do
       , "  const suicide = function() {"
       , "    parent.removeChild(e);"
       , if nextName == Name "done"
-          then "    if (kill) kill();"
+          then "    kill();"
           else "    " <> show nextName <> "(kill, parent, index);"
       , "  };"
       , ""
@@ -139,11 +139,9 @@ generate (VDOM (Free (View (Element e props children) next))) = do
       , ""
       , mconcat $ intersperse "\n"
           [ mconcat $ intersperse "\n"
-              [ "  e.addEventListener('" <> event <> "', function() {"
-              , "    suicide();"
-              , "  });"
+              [ "  e.addEventListener('" <> event <> "', suicide);"
               ]
-          | event <- events
+          | Event event <- props
           ]
       , ""
       , mconcat $ intersperse "\n"
@@ -152,7 +150,6 @@ generate (VDOM (Free (View (Element e props children) next))) = do
           ]
       , "}"
       ]
-    events = [ event | Event event <- props ]
 
 generateModule :: VDOM a -> String
 generateModule vdom = mconcat $ intersperse "\n"
@@ -169,7 +166,9 @@ generateModule vdom = mconcat $ intersperse "\n"
       [ body
       | (_, body) <- fns
       ]
-  , show startName <> "(null, document.body, 0);"
+  , show startName <> "(end, document.body, 0);"
+  , "function end() {}"
+  , ""
   , "</script>"
   , "</html>"
   ]
@@ -232,6 +231,13 @@ test3 = recur $ \next -> do
   div [] [ div [ onClick (from ()) ] [ text' "A" ], test1 ]
   div [] [ text' "B", test2 0, test2 0 ]
   next
+
+sidebar = recur $ \next -> do
+  div [ onClick (from ()) ] [ text' "BLACK" ] 
+  div [ onClick (from ()) ] [ text' "WHITE" ] 
+  next
+
+test4 = div [] [ sidebar, test3 ]
 
 --------------------------------------------------------------------------------
 

@@ -15,13 +15,10 @@ import Control.Monad.Fix
 import Control.Monad.Free
 import qualified Control.Monad.Trans.State.Strict as ST
 
-import qualified Data.ByteString.Lazy.Char8 as C
 import Data.Char (toUpper)
 import Data.String
 import Data.Maybe (catMaybes)
 import Data.List (intersperse)
-
-import Text.Jasmine (minify)
 
 import Prelude hiding (div)
 
@@ -128,7 +125,7 @@ generateModule vdom = mconcat $ intersperse "\n"
   , "<body style=\"margin: 0\">"
   , "</body>"
   , "<script>"
-  , jsmin
+  , js
   , "</script>"
   , "</html>"
   ]
@@ -148,8 +145,6 @@ generateModule vdom = mconcat $ intersperse "\n"
       , "  };"
       , "}"
       ]
-
-    jsmin = C.unpack $ minify (C.pack js)
 
     (startName, (_, fns)) = ST.runState (generate vdom) (0, [])
 

@@ -63,29 +63,24 @@ a :: Δ Int
 a = 5 + 6
 
 data DOM a
-  = Text (Δ String)
-  | ConstText String
+  = Text String
   | Element String [Props a] [VDOM a]
 
 data DOMF next
-  = forall a. Enum a => View (DOM (Δ a)) (Δ a -> next)
-  | forall a. Loop (VDOM a -> VDOM a) (a -> next)
-  | forall a. Call Name
-  | forall a b. (Enum a, Bounded a) => Enum (Δ a) (a -> VDOM (Δ b)) (Δ b -> next)
+  = forall a. (Enum a, Bounded a) => View (DOM a) (a -> next)
+  | forall a. (Enum a, Bounded a) => Loop (VDOM a -> VDOM a) (a -> next)
+  | Call Name
 
 deriving instance Functor DOMF
 
 newtype VDOM a = VDOM (Free DOMF a)
   deriving (Functor, Applicative, Monad)
 
-loop :: (VDOM a -> VDOM a) -> VDOM a
+loop :: Enum a => Bounded a => (VDOM a -> VDOM a) -> VDOM a
 loop f = VDOM $ liftF $ Loop f id
 
-view :: Enum a => DOM (Δ a) -> VDOM (Δ a)
+view :: Enum a => Bounded a => DOM a -> VDOM a
 view v = VDOM $ liftF $ View v id
-
-enum :: Enum a => Bounded a => Δ a -> (a -> VDOM (Δ b)) -> VDOM (Δ b)
-enum v f = VDOM $ liftF $ Enum v f id
 
 --------------------------------------------------------------------------------
 
@@ -97,34 +92,15 @@ instance Show Name where
 newName :: ST.State (Int, a) Name
 newName = ST.state $ \(i, a) -> (Name $ "_" <> show i, (i + 1, a))
 
-enumAll :: Enum a => Bounded a => Δ a -> [a]
+enumAll :: Enum a => Bounded a => t a -> [a]
 enumAll _ = map toEnum [minBound..maxBound]
 
-generate :: VDOM a -> ST.State (Int, [(Name, String)]) Name
+generate :: Enum a => Bounded a => VDOM a -> ST.State (Int, [(Name, String)]) Name
 generate (VDOM (Pure a)) = pure $ Name "done"
 generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
-
-generate (VDOM (Free (Enum v f next))) = do
-  name <- newName
-  nexts <- traverse generate (map f (enumAll v))
-
-  ST.modify $ \(i, m) -> (i, (name, mkBody name nexts):m)
-  pure name
-
-  where
-    mkBody name nexts = mconcat $ intersperse "\n"
-      [ "function " <> show name <> "(kill, parent, index) {"
-      , "  parent.insertBefore(e, parent.childNodes[index]);"
-      , mconcat $ intersperse "\n"
-          [ "  if ("
-          | (next, a) <- zip nexts (enumAll v)
-          ]
-      , "}"
-      ]
-
-generate (VDOM (Free (View (ConstText t) next))) = do
+generate (VDOM (Free (View (Text t) next))) = do
   name <- newName
 
   ST.modify $ \(i, m) -> (i, (name, mkBody name):m)
@@ -138,11 +114,13 @@ generate (VDOM (Free (View (ConstText t) next))) = do
       , "}"
       ]
 
-generate (VDOM (Free (View (Element e props children) next))) = do
+generate (VDOM (Free (View dom@(Element e props children) next))) = do
   chNames <- sequence [ generate child | child <- children ]
 
   name <- newName
-  nextName <- generate (VDOM (next Empty))
+  nextName <- generate (VDOM $ next $ head $ enumAll dom)
+
+  nexts <- traverse generate (map (VDOM . next) (enumAll dom))
 
   body <- mkBody name nextName chNames
 
@@ -154,7 +132,7 @@ generate (VDOM (Free (View (Element e props children) next))) = do
       [ "function " <> show name <> "(kill, parent, index) {"
       , "  const e = document.createElement('" <> e <> "');"
       , ""
-      , "  const suicide = function() {"
+      , "  const suicide = function(r) {"
       , "    parent.removeChild(e);"
       , if nextName == Name "done"
           then "    kill();"
@@ -165,9 +143,9 @@ generate (VDOM (Free (View (Element e props children) next))) = do
       , ""
       , mconcat $ intersperse "\n"
           [ mconcat $ intersperse "\n"
-              [ "  e.addEventListener('" <> event <> "', suicide);"
+              [ "  e.addEventListener('" <> event <> "', suicide(" <> show (fromEnum value) <> "));"
               ]
-          | Event event <- props
+          | Event event value <- props
           ]
       , ""
       , mconcat $ intersperse "\n"
@@ -177,7 +155,7 @@ generate (VDOM (Free (View (Element e props children) next))) = do
       , "}"
       ]
 
-generateModule :: VDOM a -> String
+generateModule :: Enum a => Bounded a => VDOM a -> String
 generateModule vdom = mconcat $ intersperse "\n"
   [ "<meta charset=\"utf-8\">"
   , "<!doctype html>"
@@ -205,61 +183,49 @@ generateModule vdom = mconcat $ intersperse "\n"
 
 data Props a
   = Attr String String
-  | Event String
+  | Event String a
 
 attr :: String -> Δ String -> Props a
 attr = undefined
 
 onClick :: a -> Props a
-onClick a = Event "click"
+onClick a = Event "click" a
 
 --------------------------------------------------------------------------------
 
-text :: Enum a => Δ String -> VDOM (Δ a)
+text :: Enum a => Bounded a => String -> VDOM a
 text = view . Text
 
-text' :: Enum a => String -> VDOM (Δ a)
-text' = view . ConstText
-
-div :: Enum a => [Props (Δ a)] -> [VDOM (Δ a)] -> VDOM (Δ a)
+div :: Enum a => Bounded a => [Props a] -> [VDOM a] -> VDOM a
 div props children = VDOM $ liftF $ View (Element "div" props children) id
 
-watch :: Δ a -> VDOM b -> VDOM b
-watch = undefined
-
-modify :: Δ a -> Δ (a -> b) -> VDOM (Δ ())
-modify = undefined
-
-set :: Show a => Δ a -> a -> VDOM (Δ ())
-set = undefined
-
-from :: Show a => a -> Δ a
-from = undefined
-
 --------------------------------------------------------------------------------
+
+data A = One | Two deriving (Eq, Enum, Bounded)
 
 test1 = do
   replicateM 3 $ do
-    div [ onClick (from 1) ] [ text' "1", text' "11", text' "111" ]
-    div [ onClick (from 2) ] [ text' "2" ]
-  pure Empty
+    div [ onClick One ] [ text "1", text "11", text "111" ]
+    div [ onClick Two ] [ text "2" ]
+  pure ()
 
 test2 x
-  | x > 10 = pure Empty
+  | x > 10 = pure ()
   | otherwise = do
-      div [ onClick (from ()) ] [ text' (show x) ]
+      div [ onClick () ] [ text (show x) ]
       test2 (x + 1)
 
 test3 = loop $ \recur -> do
-  div [] [ div [ onClick (from ()) ] [ text' "A" ], test1 ]
-  div [] [ text' "B", test2 0, test2 0 ]
+  div [] [ div [ onClick () ] [ text "A" ], test1 ]
+  div [] [ text "B", test2 0, test2 0 ]
   recur
 
 sidebar = loop $ \recur -> do
-  div [ onClick (from ()) ] [ text' "BLACK" ] 
-  div [ onClick (from ()) ] [ text' "WHITE" ] 
+  div [ onClick () ] [ text "BLACK" ] 
+  div [ onClick () ] [ text "WHITE" ] 
   recur
 
+test4 :: VDOM ()
 test4 = div [] [ sidebar, test3 ]
 
 --------------------------------------------------------------------------------
@@ -277,15 +243,9 @@ data Action = Inc | Dec deriving (Show, Enum, Bounded)
 
 counter v = loop $ \recur -> do
   r <- div []
-    [ div [ onClick (from Inc) ] [ text (from "-") ]
-    , div [] [ text (toString v) ]
-    , div [ onClick (from Dec) ] [ text (from "+") ]
+    [ div [ onClick Inc ] [ text "-" ]
+    , div [] [ text "0" ]
+    , div [ onClick Dec ] [ text "+" ]
     ]
 
-  enum r $ \r -> case r of
-    Dec -> do
-      modify v dec
-      recur
-    Inc -> do
-      modify v inc
-      recur
+  recur

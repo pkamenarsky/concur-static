@@ -21,7 +21,7 @@ import Prelude hiding (div)
 
 data DOM a
   = Text String
-  | Element String [Props a] [VDOM a]
+  | Element (Maybe String) String [Props a] [VDOM a]
 
 data DOMF next
   = forall a. (Enum a, Bounded a) => View (DOM a) (a -> next)
@@ -58,7 +58,7 @@ generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
 generate (VDOM (Free (View (Text t) next))) = pure $ Name ("t('" <> t <> "')")
-generate (VDOM (Free (View dom@(Element e props children) next))) = do
+generate (VDOM (Free (View dom@(Element ns e props children) next))) = do
   chNames <- traverse generate children
   nexts   <- traverse generate (map (VDOM . next) (enumAll dom))
 
@@ -71,7 +71,9 @@ generate (VDOM (Free (View dom@(Element e props children) next))) = do
   where
     mkBody name nexts chNames = pure $ mconcat $ intersperse "\n"
       [ "function " <> show name <> "(k, parent, index) {"
-      , "  const e = document.createElement('" <> e <> "');"
+      , case ns of
+          Just ns' ->  "  const e = document.createElementNS('" <> ns' <> ", " <> e <> "');"
+          Nothing  ->  "  const e = document.createElement('" <> e <> "');"
       , "  parent.insertBefore(e, parent.childNodes[index]);"
       , ""
       , "  function next(r) {"

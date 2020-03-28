@@ -6,7 +6,7 @@ el :: Bounded a => Enum a => String -> [Props a] -> [VDOM a] -> VDOM a
 el = elWithNamespace Nothing
 
 elWithNamespace :: Bounded a => Enum a => Maybe String -> String -> [Props a] -> [VDOM a] -> VDOM a
-elWithNamespace mNamespace name props children = view $ Element name props children
+elWithNamespace ns name props children = view $ Element ns name props children
 
 unit :: VDOM () -> VDOM ()
 unit = id

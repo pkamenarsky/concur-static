@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
-module Lib where
+module Concur.Static where
 
 import Control.Monad (replicateM_)
 import Control.Monad.Fix (mfix)
@@ -181,78 +181,3 @@ data Props a
   = Attr String AValue
   | Style [(String, String)]
   | Event String a
-
-attr :: String -> String -> Props a
-attr k = Attr k . AString
-
-disabled :: Bool -> Props a
-disabled = Attr "disabled" . ABool
-
-style :: [(String, String)] -> Props a
-style = Style
-
-onClick :: a -> Props a
-onClick a = Event "click" a
-
---------------------------------------------------------------------------------
-
-unit :: VDOM () -> VDOM ()
-unit = id
-
-text :: Enum a => Bounded a => String -> VDOM a
-text = view . Text
-
-div :: Enum a => Bounded a => [Props a] -> [VDOM a] -> VDOM a
-div props children = VDOM $ liftF $ View (Element "div" props children) id
-
-button :: Enum a => Bounded a => [Props a] -> [VDOM a] -> VDOM a
-button props children = VDOM $ liftF $ View (Element "button" props children) id
-
---------------------------------------------------------------------------------
-
-data A = One | Two deriving (Show, Eq, Enum, Bounded)
-
-test1 = do
-  div [ onClick One ] [ text "666" ]
-  div [ onClick Two ] [ text "777" ]
-  pure ()
-
-test2 x
-  | x > 10 = pure ()
-  | otherwise = do
-      div [ onClick () ] [ text (show x) ]
-      test2 (x + 1)
-
-test3 = loop $ \recur -> do
-  div [] [ div [ onClick () ] [ text "A" ], test1 ]
-  div [] [ text "B", test2 0, test2 0 ]
-  recur
-
-sidebar = loop $ \recur -> do
-  div [ style [("backgroundColor", "#777"), ("color", "fff")], onClick () ] [ text "BLACK" ] 
-  div [ style [("backgroundColor", "#333"), ("color", "f00")], onClick () ] [ text "WHITE" ] 
-  recur
-
-test4 :: VDOM ()
-test4 = div [] [ sidebar, test3 ]
-
-test5 = do
-  div [ onClick () ] [ text "bla" ]
-  div [ onClick () ] [ text "bla2" ]
-  pure ()
-
-test7 = loop $ \recur -> do
-  r <- div []
-    [ Left  <$> button [ disabled True, onClick () ] [ text "Button A" ]
-    , Right <$> button [ onClick () ] [ text "Button B" ]
-    ]
-
-  case r of
-    Left _  -> div [ onClick () ] [ text "You clicked A!!!" ]
-    Right _ -> div [ onClick () ] [ text "You clicked B!!!" ]
-
-  button [ onClick () ] [ text "Click for next try" ]
-
-  recur
-
-test8 = unit $ div [] (replicate 10 test7)

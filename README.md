@@ -2,7 +2,7 @@
 
 ## General
 
-`concur-static` explores, similar to [`concur-replica`](https://github.com/pkamenarsky/concur-replica), yet another point in the [Concur](https://github.com/ajnsit/concur) UI space. It is a static site generator, yet it provides more dynamism than other similar projects (i.e. a finite counter can be programmed with ease); and less than full-blown SPA frameworks, like React (an *infinite* counter is currently impossible).
+`concur-static` explores, similar to [`concur-replica`](https://github.com/pkamenarsky/concur-replica), yet another point in the [Concur](https://github.com/ajnsit/concur) UI space. It is a static UI generator, yet it provides more dynamism than other similar projects (i.e. a finite counter can be programmed with ease); and less than full-blown SPA frameworks, like React (an *infinite* counter is currently impossible).
 
 It does so by expecting all runtime values to be *bounded* and *enumerable*, so that the complete UI state space can be inspected in advance, at generation time. The output is a single `html` file with all UI transitions encoded statically, in Javascript.
 
@@ -24,7 +24,7 @@ Open `out.html` and enjoy the greeting.
 
 ## A quick excursion into the Concur model
 
-*Note:* For a longer and better exposition, see the official [Concur documentation](https://github.com/ajnsit/concur-documentation/blob/master/README.md). If you're already familiar with `Concur` you might still want to read this section, since `concur-static` (necessarily) diverges a bit in its implementation.
+*Note:* For a longer and better exposition, see the official [Concur documentation](https://github.com/ajnsit/concur-documentation/blob/master/README.md). If you're already familiar with Concur you might still want to read this section, since `concur-static` (necessarily) diverges a bit in its implementation.
 
 Let's start with a simple Concur component:
 
@@ -163,7 +163,7 @@ But attempting to generate an output for `counter` with `concur-static` would le
 
 However, a *bounded* counter is super easy:
 
-```
+```haskell
 counter x
   | x > 10 = pure ()
   | otherwise = do
@@ -171,9 +171,9 @@ counter x
       counter (x + 1)
 ```
 
-Quite a respectable feat for a static site generator, one might claim!
+Quite a respectable feat for a static UI generator, one might claim!
 
-And there's more: even *unbounded* recursion is achievable, if the component has zero arguments. "Tying the knot" is achieved explicitly by way of the `loop` combinator:
+And there's more: even *unbounded* recursion is quite possible, if the component has zero arguments. "Tying the knot" is achieved explicitly by way of the `loop` combinator:
 
 ```haskell
 goodAndEvil = loop $ \recur -> do
@@ -229,7 +229,7 @@ function _62(k, parent, index) {
 }
 ```
 
-The magic happens in the `switch` clause - since all return values of a component are known in advance it is always possible to dispatch dynamically to the correct predetermined continuation. This is heaven for Laplace's demon!
+The magic happens in the `switch` clause - since all return values of a component are known in advance it is always possible to dispatch dynamically to the correct predetermined continuation. This is heaven for Laplace's daemon!
 
 As a side note, every component is completely teared down before the next one is built up. Therein lies an opportunity for optimisation: since all DOM configurations are known beforehand, it would be better to compute a diff and subsequently generate only minimal patching code between UI states.
 

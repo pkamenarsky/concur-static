@@ -1,5 +1,7 @@
 module Main where
 
+import Control.Monad.Fix
+
 import Concur.Static
 import Concur.Static.DOM
 import Concur.Static.DOM.Props
@@ -54,5 +56,55 @@ test7 = loop $ \recur -> do
 
 test8 = unit $ div [] (replicate 10 test7)
 
+--------------------------------------------------------------------------------
+
+data Menu = Item1 | Item2 | Item3 deriving (Bounded, Enum)
+
+sidebar' :: VDOM Menu
+sidebar' = do
+  item <- div []
+    [ div [ onClick item] [ text "Item" ]
+    | (item, _) <- items
+    ]
+  undefined
+  where
+    items' =
+      [ do
+          r <- div []
+            [ div [ onClick item] [ text $ if i == i' then "Selected" else "Item" ]
+            | (i', (item, _)) <- zip [0..] items
+            ]
+          items' !! fromEnum r
+      | i <- [0..(length items) -1]
+      ]
+
+    items :: [(Menu, String)]
+    items = undefined
+
+mut1 :: VDOM ()
+mut1 = loop $ \next -> do
+  () <- div [] [ text "M1" ]
+  mut2 next
+  
+mut2 :: VDOM () -> VDOM ()
+mut2 next = loop $ \recur -> do
+  () <- div [] [ text "M1" ]
+  next
+
+item :: Int -> [VDOM ()] -> VDOM ()
+item index ~nexts = do
+  r <- div []
+    [ div [ onClick i ] [ if index == index' then text "SELECTED" else text "ITEM" ]
+    | (index', i) <- zip [0..] [(minBound :: Menu)..maxBound]
+    ]
+  nexts !! fromEnum r
+
+items' = do
+  items <- vfix $ \items -> sequence
+    [ reify $ item (fromEnum i) items
+    | i <- [(minBound :: Menu)..maxBound]
+    ]
+  items !! 0
+
 main :: IO ()
-main = writeFile "out.html" $ generateModule test8
+main = writeFile "out.html" $ generateModule items'

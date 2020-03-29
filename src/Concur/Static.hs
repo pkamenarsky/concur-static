@@ -7,13 +7,15 @@
 module Concur.Static where
 
 import Control.Monad (replicateM_)
-import Control.Monad.Fix (mfix)
+import Control.Monad.Fix (MonadFix, mfix)
 import Control.Monad.Free (Free (Pure, Free), liftF)
 import qualified Control.Monad.Trans.State.Strict as ST
 
 import Data.Char (toUpper)
 import Data.Maybe (catMaybes)
 import Data.List (intersperse)
+
+import Unsafe.Coerce
 
 import Prelude hiding (div)
 
@@ -25,7 +27,9 @@ data DOM a
 
 data DOMF next
   = forall a. (Enum a, Bounded a) => View (DOM a) (a -> next)
-  | forall a. (Enum a, Bounded a) => Loop (VDOM a -> VDOM a) (a -> next)
+  | forall a. Enum a => Loop (VDOM a -> VDOM a) (a -> next)
+  | forall a. Enum a => Reify (VDOM a) (VDOM a -> next)
+  | forall a. MFix (a -> VDOM a) (a -> next)
   | Call Name
 
 deriving instance Functor DOMF
@@ -33,8 +37,13 @@ deriving instance Functor DOMF
 newtype VDOM a = VDOM (Free DOMF a)
   deriving (Functor, Applicative, Monad)
 
-loop :: Enum a => Bounded a => (VDOM a -> VDOM a) -> VDOM a
+vfix f = VDOM $ liftF $ MFix f id
+
+loop :: Enum a => (VDOM a -> VDOM a) -> VDOM a
 loop f = VDOM $ liftF $ Loop f id
+
+reify :: Enum a => VDOM a -> VDOM (VDOM a)
+reify f = VDOM $ liftF $ Reify f id
 
 view :: Enum a => Bounded a => DOM a -> VDOM a
 view v = VDOM $ liftF $ View v id
@@ -52,12 +61,17 @@ newName = ST.state $ \(i, a) -> (Name $ "_" <> show i, (i + 1, a))
 enumAll :: forall t a. Enum a => Bounded a => t a -> [a]
 enumAll _ = [(minBound :: a)..maxBound]
 
-generate :: Enum a => Bounded a => VDOM a -> ST.State (Int, [(Name, String)]) Name
-generate (VDOM (Pure a)) = pure $ Done (fromEnum a)
-generate (VDOM (Free (Call name))) = pure name
-generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
-  generate (vdom (VDOM $ liftF $ Call name))
-generate (VDOM (Free (View (Text t) next))) = pure $ Name ("t('" <> t <> "')")
+generate :: Enum a => VDOM a -> ST.State (Int, [(Name, String)]) (Name, Maybe a)
+generate (VDOM (Pure a)) = pure (Done (fromEnum a), Just a)
+generate (VDOM (Free (Call name))) = pure (name, Nothing)
+generate (VDOM (Free (Loop vdom next))) = mfix $ \(~(name, _)) ->
+  unsafeCoerce $ generate (vdom (VDOM $ liftF $ Call name))
+generate (VDOM (Free (View (Text t) next))) = pure (Name ("t('" <> t <> "')"), Nothing)
+generate (VDOM (Free (Reify f next))) = do
+  (name, _) <- generate f
+  generate (VDOM $ next (VDOM $ liftF $ Call name))
+generate (VDOM (Free (MFix f next))) = mfix $ \(~(_, Just a)) -> do
+  generate (VDOM $ next (f a))
 generate (VDOM (Free (View dom@(Element ns e props children) next))) = do
   chNames <- traverse generate children
   nexts   <- traverse generate (map (VDOM . next) (enumAll dom))
@@ -66,7 +80,7 @@ generate (VDOM (Free (View dom@(Element ns e props children) next))) = do
   body    <- mkBody name nexts chNames
 
   ST.modify $ \(i, m) -> (i, (name, body):m)
-  pure name
+  pure (name, Nothing)
 
   where
     mkBody name nexts chNames = pure $ mconcat $ intersperse "\n"
@@ -87,7 +101,7 @@ generate (VDOM (Free (View dom@(Element ns e props children) next))) = do
                   Name nextName -> nextName <> "(k, parent, index); "
               , "break;"
               ]
-          | (value, nextName) <- zip (enumAll dom) nexts
+          | (value, (nextName, _)) <- zip (enumAll dom) nexts
           ]
       , "    }"
       , "  };"
@@ -117,7 +131,7 @@ generate (VDOM (Free (View dom@(Element ns e props children) next))) = do
       , "  // Children"
       , mconcat $ intersperse "\n"
           [ "  " <> show chName <> "(next, e, " <> show index <> ");"
-          | (index, chName) <- zip [0..] chNames
+          | (index, (chName, _)) <- zip [0..] chNames
           ]
       , "}"
       ]
@@ -154,7 +168,7 @@ generateModule vdom = mconcat $ intersperse "\n"
       , "}"
       ]
 
-    (startName, (_, fns)) = ST.runState (generate vdom) (0, [])
+    ((startName, _), (_, fns)) = ST.runState (generate vdom) (0, [])
 
 --------------------------------------------------------------------------------
 

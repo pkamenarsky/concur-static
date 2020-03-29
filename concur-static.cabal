@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e651ef357369932ac35262dfe49c78597f6d72f5f188f03dc85de86cfb0a9966
+-- hash: 306340d3ab723604264a58ddebd17aa748501d712ff144fc0a9acb569b68e52f
 
 name:           concur-static
 version:        0.1.0.0
@@ -39,11 +39,8 @@ library
       src
   build-depends:
       base >=4.7 && <5
-    , containers
     , free
-    , hashable
     , transformers
-    , unordered-containers
   default-language: Haskell2010
 
 executable concur-static-exe
@@ -56,11 +53,8 @@ executable concur-static-exe
   build-depends:
       base >=4.7 && <5
     , concur-static
-    , containers
     , free
-    , hashable
     , transformers
-    , unordered-containers
   default-language: Haskell2010
 
 test-suite concur-static-test
@@ -74,9 +68,6 @@ test-suite concur-static-test
   build-depends:
       base >=4.7 && <5
     , concur-static
-    , containers
     , free
-    , hashable
     , transformers
-    , unordered-containers
   default-language: Haskell2010

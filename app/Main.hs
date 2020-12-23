@@ -54,5 +54,59 @@ test7 = loop $ \recur -> do
 
 test8 = unit $ div [] (replicate 10 test7)
 
+data Menu = A | B | C
+  deriving (Bounded, Enum)
+
+site :: VDOM ()
+site = loop3 menuA menuB menuC
+  where
+    menuA recurA recurB recurC = do
+      choice <- div []
+        [ div [] [ text "A" ]
+        , div [ onClick B ] [ text "B" ]
+        , div [ onClick C ] [ text "C" ]
+
+        , do
+            div [ onClick () ] [ text "This is the text of A" ]
+            text "Done"
+        ]
+
+      case choice of
+        A -> recurA
+        B -> recurB
+        C -> recurC
+
+    menuB recurA recurB recurC = do
+      choice <- div []
+        [ div [ onClick A ] [ text "A" ]
+        , div [] [ text "B" ]
+        , div [ onClick C ] [ text "C" ]
+
+        , do
+            div [ onClick () ] [ text "This is the text of B" ]
+            text "Done"
+        ]
+
+      case choice of
+        A -> recurA
+        B -> recurB
+        C -> recurC
+
+    menuC recurA recurB recurC = do
+      choice <- div []
+        [ div [ onClick A ] [ text "A" ]
+        , div [ onClick B ] [ text "B" ]
+        , div [] [ text "C" ]
+
+        , do
+            div [ onClick () ] [ text "This is the text of C" ]
+            text "Done"
+        ]
+
+      case choice of
+        A -> recurA
+        B -> recurB
+        C -> recurC
+
 main :: IO ()
-main = writeFile "out.html" $ generateModule test8
+main = writeFile "out.html" $ generateModule site

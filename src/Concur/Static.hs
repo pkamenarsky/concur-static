@@ -26,6 +26,36 @@ data DOM a
 data DOMF next
   = forall a. (Enum a, Bounded a) => View (DOM a) (a -> next)
   | forall a. (Enum a, Bounded a) => Loop (VDOM a -> VDOM a) (a -> next)
+  | forall a. (Enum a, Bounded a) => Loop2
+      (VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a)
+      (a -> next)
+  | forall a. (Enum a, Bounded a) => Loop3
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (a -> next)
+  | forall a. (Enum a, Bounded a) => Loop4
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (a -> next)
+  | forall a. (Enum a, Bounded a) => Loop5
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (a -> next)
+  | forall a. (Enum a, Bounded a) => Loop6
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+      (a -> next)
   | Call Name
 
 deriving instance Functor DOMF
@@ -35,6 +65,46 @@ newtype VDOM a = VDOM (Free DOMF a)
 
 loop :: Enum a => Bounded a => (VDOM a -> VDOM a) -> VDOM a
 loop f = VDOM $ liftF $ Loop f id
+
+loop2 :: Enum a => Bounded a
+  => (VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a)
+  -> VDOM a
+loop2 f g = VDOM $ liftF $ Loop2 f g id
+
+loop3 :: Enum a => Bounded a
+  => (VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> VDOM a
+loop3 f g h = VDOM $ liftF $ Loop3 f g h id
+
+loop4 :: Enum a => Bounded a
+  => (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> VDOM a
+loop4 f g h i = VDOM $ liftF $ Loop4 f g h i id
+
+loop5 :: Enum a => Bounded a
+  => (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> VDOM a
+loop5 f g h i j = VDOM $ liftF $ Loop5 f g h i j id
+
+loop6 :: Enum a => Bounded a
+  => (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> (VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a -> VDOM a)
+  -> VDOM a
+loop6 f g h i j k = VDOM $ liftF $ Loop6 f g h i j k id
 
 view :: Enum a => Bounded a => DOM a -> VDOM a
 view v = VDOM $ liftF $ View v id
@@ -57,6 +127,39 @@ generate (VDOM (Pure a)) = pure $ Done (fromEnum a)
 generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
+generate (VDOM (Free (Loop2 vdoma vdomb next))) = fmap fst $ mfix $ \(~(namea, nameb)) -> (,)
+  <$> generate (vdoma (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb)) 
+  <*> generate (vdomb (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb)) 
+generate (VDOM (Free (Loop3 vdoma vdomb vdomc next))) = fmap f $ mfix $ \(~(namea, nameb, namec)) -> (,,)
+  <$> generate (vdoma (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec)) 
+  <*> generate (vdomb (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec)) 
+  <*> generate (vdomc (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec)) 
+  where
+    f (a, _, _) = a
+generate (VDOM (Free (Loop4 vdoma vdomb vdomc vdomd next))) = fmap f $ mfix $ \(~(namea, nameb, namec, named)) -> (,,,)
+  <$> generate (vdoma (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named)) 
+  <*> generate (vdomb (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named)) 
+  <*> generate (vdomc (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named)) 
+  <*> generate (vdomd (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named)) 
+  where
+    f (a, _, _, _) = a
+generate (VDOM (Free (Loop5 vdoma vdomb vdomc vdomd vdome next))) = fmap f $ mfix $ \(~(namea, nameb, namec, named, namee)) -> (,,,,)
+  <$> generate (vdoma (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee)) 
+  <*> generate (vdomb (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee)) 
+  <*> generate (vdomc (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee)) 
+  <*> generate (vdomd (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee)) 
+  <*> generate (vdome (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee)) 
+  where
+    f (a, _, _, _, _) = a
+generate (VDOM (Free (Loop6 vdoma vdomb vdomc vdomd vdome vdomf next))) = fmap f $ mfix $ \(~(namea, nameb, namec, named, namee, namef)) -> (,,,,,)
+  <$> generate (vdoma (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee) (VDOM $ liftF $ Call namef))
+  <*> generate (vdomb (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee) (VDOM $ liftF $ Call namef))
+  <*> generate (vdomc (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee) (VDOM $ liftF $ Call namef))
+  <*> generate (vdomd (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee) (VDOM $ liftF $ Call namef))
+  <*> generate (vdome (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee) (VDOM $ liftF $ Call namef))
+  <*> generate (vdomf (VDOM $ liftF $ Call namea) (VDOM $ liftF $ Call nameb) (VDOM $ liftF $ Call namec) (VDOM $ liftF $ Call named) (VDOM $ liftF $ Call namee) (VDOM $ liftF $ Call namef))
+  where
+    f (a, _, _, _, _, _) = a
 generate (VDOM (Free (View (Text t) next))) = pure $ Name ("t('" <> t <> "')")
 generate (VDOM (Free (View dom@(Element ns e props children) next))) = do
   chNames <- traverse generate children

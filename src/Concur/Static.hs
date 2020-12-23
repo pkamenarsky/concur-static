@@ -26,6 +26,7 @@ data DOM a
 data DOMF next
   = forall a. (Enum a, Bounded a) => View (DOM a) (a -> next)
   | forall a. (Enum a, Bounded a) => Loop (VDOM a -> VDOM a) (a -> next)
+  | forall a. (Enum a, Bounded a) => LoopA [[VDOM a] -> VDOM a] (a -> next)
   | Call Name
 
 deriving instance Functor DOMF
@@ -35,6 +36,9 @@ newtype VDOM a = VDOM (Free DOMF a)
 
 loop :: Enum a => Bounded a => (VDOM a -> VDOM a) -> VDOM a
 loop f = VDOM $ liftF $ Loop f id
+
+loopA :: Enum a => Bounded a => [[VDOM a] -> VDOM a] -> VDOM a
+loopA f = VDOM $ liftF $ LoopA f id
 
 view :: Enum a => Bounded a => DOM a -> VDOM a
 view v = VDOM $ liftF $ View v id
@@ -57,6 +61,20 @@ generate (VDOM (Pure a)) = pure $ Done (fromEnum a)
 generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
+generate (VDOM (Free (LoopA vdoms next))) = fmap lhead $ mfix $ \(~names) -> seq
+  -- [ generate $ vdom (map (VDOM . liftF . Call) names)
+  -- | vdom <- vdoms
+  -- ]
+  (lmap (\(~vdom) -> generate $ vdom (lmap (VDOM . liftF . Call) names)) vdoms)
+  where
+    lhead ~(~a:_) = a
+
+    lmap _ [] = []
+    lmap ~f (~(~a:(~as))) = f a:lmap f as
+
+    seq [] = pure []
+    seq (~(~a:(~as))) = (:) <$> a <*> seq as
+
 generate (VDOM (Free (View (Text t) next))) = pure $ Name ("t('" <> t <> "')")
 generate (VDOM (Free (View dom@(Element ns e props children) next))) = do
   chNames <- traverse generate children

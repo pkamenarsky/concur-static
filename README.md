@@ -194,28 +194,28 @@ goodAndEvil = loop $ \recur -> do
 
 This will generate a program that switches between good and evil indefinitely - but never goes beyond.
 
-Mutual recursion is also possible, by using `loopMany`:
+Mutual recursion is also possible with `loopMany`:
 
 ```haskell
 mutual = loopMany [a, b]
   where
-    a [goa, gob] = do
+    a [recurA, recurB] = do
       r <- div []
         [ button [ onClick (Left ()) ] [ text "This is A, stay here" ]
         , button [ onClick (Right ()) ] [ text "Go to B" ]
         ]
       case r of
-        Left _ -> goa
-        Right _ -> gob
+        Left _ -> recurA
+        Right _ -> recurB
 
-    b [goa, gob] = do
+    b [recurA, recurB] = do
       r <- div []
         [ button [ onClick (Left ()) ] [ text "This is B, stay here" ]
         , button [ onClick (Right ()) ] [ text "Go to A" ]
         ]
       case r of
-        Left _ -> gob
-        Right _ -> goa
+        Left _ -> recurB
+        Right _ -> recurA
 ```
 
 ## Restrictions

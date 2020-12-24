@@ -57,23 +57,23 @@ test8 = unit $ div [] (replicate 10 test7)
 test9 :: VDOM ()
 test9 = loopMany [a, b]
   where
-    a [goa, gob] = do
+    a [recurA, recurB] = do
       r <- div []
         [ button [ onClick (Left ()) ] [ text "This is A, stay here" ]
         , button [ onClick (Right ()) ] [ text "Go to B" ]
         ]
       case r of
-        Left _ -> goa
-        Right _ -> gob
+        Left _ -> recurA
+        Right _ -> recurB
 
-    b [goa, gob] = do
+    b [recurA, recurB] = do
       r <- div []
         [ button [ onClick (Left ()) ] [ text "This is B, stay here" ]
         , button [ onClick (Right ()) ] [ text "Go to A" ]
         ]
       case r of
-        Left _ -> gob
-        Right _ -> goa
+        Left _ -> recurB
+        Right _ -> recurA
 
 data Menu = A | B | C
   deriving (Bounded, Enum)

@@ -61,11 +61,15 @@ generate (VDOM (Pure a)) = pure $ Done (fromEnum a)
 generate (VDOM (Free (Call name))) = pure name
 generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
   generate (vdom (VDOM $ liftF $ Call name))
-generate (VDOM (Free (LoopA vdoms next))) = fmap lhead $ mfix $ \(~names) -> seq
-  -- [ generate $ vdom (map (VDOM . liftF . Call) names)
-  -- | vdom <- vdoms
-  -- ]
-  (lmap (\(~vdom) -> generate $ vdom (lmap (VDOM . liftF . Call) names)) vdoms)
+generate (VDOM (Free (LoopA vdoms next))) = fmap lhead $ mfix $ \(~names) -> do
+  let ~bla = [ VDOM $ liftF $ Call name
+            | name <- names
+            ]
+  seq
+    [ generate (vdom bla)
+    | vdom <- vdoms
+    ]
+  -- (lmap (\(~vdom) -> generate $ vdom (lmap (VDOM . liftF . Call) names)) vdoms)
   where
     lhead ~(~a:_) = a
 

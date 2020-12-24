@@ -25,8 +25,7 @@ data DOM a
 
 data DOMF next
   = forall a. (Enum a, Bounded a) => View (DOM a) (a -> next)
-  | forall a. (Enum a, Bounded a) => Loop (VDOM a -> VDOM a) (a -> next)
-  | forall a. (Enum a, Bounded a) => LoopA [[VDOM a] -> VDOM a] (a -> next)
+  | forall a. (Enum a, Bounded a) => LoopMany [[VDOM a] -> VDOM a] (a -> next)
   | Call Name
 
 deriving instance Functor DOMF
@@ -35,10 +34,10 @@ newtype VDOM a = VDOM (Free DOMF a)
   deriving (Functor, Applicative, Monad)
 
 loop :: Enum a => Bounded a => (VDOM a -> VDOM a) -> VDOM a
-loop f = VDOM $ liftF $ Loop f id
+loop f = loopMany [\[a] -> f a]
 
-loopA :: Enum a => Bounded a => [[VDOM a] -> VDOM a] -> VDOM a
-loopA f = VDOM $ liftF $ LoopA f id
+loopMany :: Enum a => Bounded a => [[VDOM a] -> VDOM a] -> VDOM a
+loopMany f = VDOM $ liftF $ LoopMany f id
 
 view :: Enum a => Bounded a => DOM a -> VDOM a
 view v = VDOM $ liftF $ View v id
@@ -59,26 +58,14 @@ enumAll _ = [(minBound :: a)..maxBound]
 generate :: Enum a => Bounded a => VDOM a -> ST.State (Int, [(Name, String)]) Name
 generate (VDOM (Pure a)) = pure $ Done (fromEnum a)
 generate (VDOM (Free (Call name))) = pure name
-generate (VDOM (Free (Loop vdom next))) = mfix $ \name ->
-  generate (vdom (VDOM $ liftF $ Call name))
-generate (VDOM (Free (LoopA vdoms next))) = fmap lhead $ mfix $ \(~names) -> do
-  let ~bla = [ VDOM $ liftF $ Call name
-            | name <- names
-            ]
-  seq
-    [ generate (vdom bla)
-    | vdom <- vdoms
-    ]
-  -- (lmap (\(~vdom) -> generate $ vdom (lmap (VDOM . liftF . Call) names)) vdoms)
-  where
-    lhead ~(~a:_) = a
-
-    lmap _ [] = []
-    lmap ~f (~(~a:(~as))) = f a:lmap f as
-
-    seq [] = pure []
-    seq (~(~a:(~as))) = (:) <$> a <*> seq as
-
+generate (VDOM (Free (LoopMany vdoms next))) = fmap head $ mfix $ \names -> do
+  -- Regular fmap won't work here, since pattern matching
+  -- on the constructor will lead to an infinite loop
+  let calls =
+        [ VDOM $ liftF $ Call (names !! index)
+        | index <- [0..length vdoms - 1]
+        ]
+  sequence $ map (\vdom -> generate $ vdom calls) vdoms
 generate (VDOM (Free (View (Text t) next))) = pure $ Name ("t('" <> t <> "')")
 generate (VDOM (Free (View dom@(Element ns e props children) next))) = do
   chNames <- traverse generate children

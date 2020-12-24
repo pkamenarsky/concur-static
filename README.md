@@ -194,6 +194,30 @@ goodAndEvil = loop $ \recur -> do
 
 This will generate a program that switches between good and evil indefinitely - but never goes beyond.
 
+Mutual recursion is also possible, by using `loopMany`:
+
+```haskell
+mutual = loopMany [a, b]
+  where
+    a [goa, gob] = do
+      r <- div []
+        [ button [ onClick (Left ()) ] [ text "This is A, stay here" ]
+        , button [ onClick (Right ()) ] [ text "Go to B" ]
+        ]
+      case r of
+        Left _ -> goa
+        Right _ -> gob
+
+    b [goa, gob] = do
+      r <- div []
+        [ button [ onClick (Left ()) ] [ text "This is B, stay here" ]
+        , button [ onClick (Right ()) ] [ text "Go to A" ]
+        ]
+      case r of
+        Left _ -> gob
+        Right _ -> goa
+```
+
 ## Restrictions
 
 How does `concur-replica` work, exactly? In fact, the type signatures from above weren't the full story. Here are they, now complete:

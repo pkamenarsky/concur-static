@@ -220,7 +220,7 @@ mutual = loopMany [a, b]
 
 ## Restrictions
 
-How does `concur-replica` work, exactly? In fact, the type signatures from above weren't the full story. Here are they, now complete:
+How does `concur-static` work, exactly? In fact, the type signatures from above weren't the full story. Here are they, now complete:
 
 ```haskell
 button :: Bounded a => Enum a => [Props a] -> [VDOM a] -> VDOM a
